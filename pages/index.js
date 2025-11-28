@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import {
-  useWeb3ModalAccount,
-  useWeb3ModalProvider
-} from "@web3modal/ethers/react";
+  useAccount,
+  useWriteContract,
+  useConnect,
+} from "wagmi";
 import { CONTRACT_ADDRESS } from "../web3modal";
 
 const ABI = [
@@ -15,8 +16,9 @@ const ABI = [
 const TOKEN_ID = 0;
 
 export default function Home() {
-  const { address, isConnected } = useWeb3ModalAccount();
-  const { walletProvider } = useWeb3ModalProvider();
+  const { address, isConnected } = useAccount();
+  const { connect } = useConnect();
+  const { writeContractAsync } = useWriteContract();
 
   const [price, setPrice] = useState(null);
   const [supply, setSupply] = useState(null);
@@ -33,30 +35,30 @@ export default function Home() {
 
   async function loadData() {
     try {
-      const rpc = new ethers.JsonRpcProvider("https://mainnet.base.org");
-      const c = new ethers.Contract(CONTRACT_ADDRESS, ABI, rpc);
+      const provider = new ethers.JsonRpcProvider("https://mainnet.base.org");
+      const c = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
 
-      // Load claim condition
+      // CLAIM CONDITIONS
       const cond = await c.claimConditions(TOKEN_ID);
 
       setPrice(ethers.formatEther(cond.pricePerToken));
       setSupply(cond.supplyClaimed.toString());
       setMaxSupply(cond.maxClaimableSupply.toString());
 
-      // Load metadata
+      // METADATA
       const rawUri = await c.uri(TOKEN_ID);
-      const cleanUri = rawUri.replace("ipfs://", "https://ipfs.io/ipfs/");
-      const meta = await fetch(cleanUri).then(r => r.json());
+      const uri = rawUri.replace("ipfs://", "https://ipfs.io/ipfs/");
+      const meta = await fetch(uri).then(r => r.json());
       setImage(meta.image.replace("ipfs://", "https://ipfs.io/ipfs/"));
 
     } catch (err) {
-      console.log("Error loading data", err);
+      console.error(err);
     }
   }
 
   async function handleMint() {
     if (!isConnected) {
-      setStatus("Connect your wallet first.");
+      setStatus("Connect wallet first");
       return;
     }
 
@@ -64,26 +66,23 @@ export default function Home() {
     setStatus("Minting…");
 
     try {
-      const provider = new ethers.BrowserProvider(walletProvider);
-      const signer = await provider.getSigner();
-      const c = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+      const total = ethers.parseEther(String(price)) * BigInt(qty);
 
-      const totalCost = ethers.parseEther(String(price)) * BigInt(qty);
+      const tx = await writeContractAsync({
+        address: CONTRACT_ADDRESS,
+        abi: ABI,
+        functionName: "claimTo",
+        args: [address, TOKEN_ID, qty],
+        value: total
+      });
 
-      const tx = await c.claimTo(
-        address,
-        TOKEN_ID,
-        qty,
-        { value: totalCost }
-      );
-
-      setStatus("Waiting for confirmation…");
+      setStatus("Waiting confirmation…");
       await tx.wait();
 
-      setStatus("Mint successful! 🎉");
+      setStatus("Mint successful 🎉");
       loadData();
-    } catch (e) {
-      console.log(e);
+    } catch (err) {
+      console.log(err);
       setStatus("Mint failed ❌");
     }
 
@@ -92,7 +91,8 @@ export default function Home() {
 
   return (
     <div className="container">
-      {/* Header */}
+
+      {/* HEADER */}
       <div className="card">
         <div className="row">
           <div>
@@ -112,7 +112,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* NFT image */}
+      {/* NFT IMAGE */}
       <div className="card center">
         <img
           src={image}
@@ -120,7 +120,7 @@ export default function Home() {
         />
       </div>
 
-      {/* Price + Supply */}
+      {/* PRICE + SUPPLY */}
       <div className="card">
         <div className="row">
           <div>
@@ -132,14 +132,12 @@ export default function Home() {
 
           <div className="right">
             <div className="small">Supply</div>
-            <div>
-              {supply} / {maxSupply}
-            </div>
+            <div>{supply} / {maxSupply}</div>
           </div>
         </div>
 
-        {/* Quantity + Mint */}
-        <div style={{ marginTop: 12 }} className="row">
+        {/* MINT CONTROLS */}
+        <div className="row" style={{ marginTop: 12 }}>
           <div>
             <input
               type="number"
@@ -148,7 +146,6 @@ export default function Home() {
               onChange={(e) => setQty(e.target.value)}
               className="inputQty"
             />
-            <span className="small" style={{ marginLeft: 10 }}>qty</span>
           </div>
 
           <div>
@@ -169,6 +166,7 @@ export default function Home() {
         <strong>Status:</strong> {status}
         <div className="footer">{CONTRACT_ADDRESS}</div>
       </div>
+
     </div>
   );
-  }
+        }
