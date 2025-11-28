@@ -221,15 +221,14 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="card center">
-        <img
-  className="nft-img"
-  src="/jessepunk.png"
-  alt="NFT"
-  style={{ width: 260, height: 260, borderRadius: 8 }}
-/>
-        )}
-      </div>
+    <div className="card center">
+  <img
+    className="nft-img"
+    src="/jessepunk.png"
+    alt="NFT"
+    style={{ width: 260, height: 260, borderRadius: 8 }}
+  />
+</div>
 
       <div className="card">
         <div className="row">
