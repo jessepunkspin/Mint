@@ -7,86 +7,51 @@ import {
 import { CONTRACT_ADDRESS } from "../web3modal";
 
 const ABI = [
-  "function name() view returns (string)",
-  "function symbol() view returns (string)",
-  "function totalSupply() view returns (uint256)",
-  "function maxSupply() view returns (uint256)",
-  "function price() view returns (uint256)",
-  "function cost() view returns (uint256)",
-  "function publicSalePrice() view returns (uint256)",
-  "function claim(uint256) payable",
-  "function mint(uint256) payable",
-  "function mintTo(address,uint256) payable",
-  "function safeMint(address,uint256) payable"
+  "function uri(uint256) view returns (string)",
+  "function claimConditions(uint256) view returns (tuple(uint256 startTimestamp,uint256 maxClaimableSupply,uint256 supplyClaimed,uint256 quantityLimitPerWallet,uint256 pricePerToken,address currency,uint256 merkleRoot))",
+  "function claimTo(address,uint256,uint256) payable"
 ];
+
+const TOKEN_ID = 0;
 
 export default function Home() {
   const { address, isConnected } = useWeb3ModalAccount();
   const { walletProvider } = useWeb3ModalProvider();
 
-  const [contract, setContract] = useState(null);
-  const [info, setInfo] = useState({
-    name: "NFT",
-    symbol: "",
-    supply: null,
-    maxSupply: null,
-    price: null
-  });
+  const [price, setPrice] = useState(null);
+  const [supply, setSupply] = useState(null);
+  const [maxSupply, setMaxSupply] = useState(null);
+  const [image, setImage] = useState("/jessepunk.png");
+
   const [qty, setQty] = useState(1);
   const [status, setStatus] = useState("Ready");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    loadReadData();
+    loadData();
   }, []);
 
-  async function loadReadData() {
+  async function loadData() {
     try {
       const rpc = new ethers.JsonRpcProvider("https://mainnet.base.org");
       const c = new ethers.Contract(CONTRACT_ADDRESS, ABI, rpc);
 
-      let name = await safe(c.name);
-      let symbol = await safe(c.symbol);
-      let supply = await safeNum(c.totalSupply);
-      let maxSupply = await safeNum(c.maxSupply);
+      // Load claim condition
+      const cond = await c.claimConditions(TOKEN_ID);
 
-      let price = await safeNum(c.price);
-      if (!price) price = await safeNum(c.cost);
-      if (!price) price = await safeNum(c.publicSalePrice);
-      if (price) price = ethers.formatEther(price);
+      setPrice(ethers.formatEther(cond.pricePerToken));
+      setSupply(cond.supplyClaimed.toString());
+      setMaxSupply(cond.maxClaimableSupply.toString());
 
-      setInfo({
-        name: name || "JessePunk Legends",
-        symbol: symbol || "",
-        supply: supply ?? "—",
-        maxSupply: maxSupply ?? "—",
-        price: price || null
-      });
-    } catch (e) {
-      console.log("Read error", e);
+      // Load metadata
+      const rawUri = await c.uri(TOKEN_ID);
+      const cleanUri = rawUri.replace("ipfs://", "https://ipfs.io/ipfs/");
+      const meta = await fetch(cleanUri).then(r => r.json());
+      setImage(meta.image.replace("ipfs://", "https://ipfs.io/ipfs/"));
+
+    } catch (err) {
+      console.log("Error loading data", err);
     }
-  }
-
-  async function safe(fn) {
-    try {
-      return await fn();
-    } catch {
-      return null;
-    }
-  }
-
-  async function safeNum(fn) {
-    try {
-      return (await fn()).toString();
-    } catch {
-      return null;
-    }
-  }
-
-  async function setupContract() {
-    const provider = new ethers.BrowserProvider(walletProvider);
-    const signer = await provider.getSigner();
-    return new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
   }
 
   async function handleMint() {
@@ -96,39 +61,30 @@ export default function Home() {
     }
 
     setLoading(true);
-    setStatus("Preparing transaction…");
+    setStatus("Minting…");
 
     try {
-      const c = await setupContract();
-      setContract(c);
+      const provider = new ethers.BrowserProvider(walletProvider);
+      const signer = await provider.getSigner();
+      const c = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
 
-      const q = Number(qty || 1);
+      const totalCost = ethers.parseEther(String(price)) * BigInt(qty);
 
-      let price = info.price ? ethers.parseEther(info.price) : 0n;
-      let total = price * BigInt(q);
+      const tx = await c.claimTo(
+        address,
+        TOKEN_ID,
+        qty,
+        { value: totalCost }
+      );
 
-      const methods = [
-        ["claim", [q]],
-        ["mint", [q]],
-        ["mintTo", [address, q]],
-        ["safeMint", [address, q]]
-      ];
+      setStatus("Waiting for confirmation…");
+      await tx.wait();
 
-      for (const [fn, args] of methods) {
-        try {
-          const tx = await c[fn](...args, { value: total });
-          setStatus("Waiting for confirmation…");
-          await tx.wait();
-          setStatus("Mint successful ✅");
-          loadReadData();
-          setLoading(false);
-          return;
-        } catch (err) {}
-      }
-
-      setStatus("Mint method not found. Need full ABI.");
+      setStatus("Mint successful! 🎉");
+      loadData();
     } catch (e) {
-      setStatus("Transaction failed.");
+      console.log(e);
+      setStatus("Mint failed ❌");
     }
 
     setLoading(false);
@@ -136,11 +92,12 @@ export default function Home() {
 
   return (
     <div className="container">
+      {/* Header */}
       <div className="card">
         <div className="row">
           <div>
-            <div className="title">{info.name}</div>
-            <div className="small">{info.symbol}</div>
+            <div className="title">JessePunk Legends</div>
+            <div className="small">Edition Drop</div>
           </div>
 
           <div className="right">
@@ -155,55 +112,54 @@ export default function Home() {
         </div>
       </div>
 
+      {/* NFT image */}
       <div className="card center">
         <img
-          className="nft-img"
-          src="/jessepunk.png"
-          alt="NFT"
+          src={image}
           style={{ width: 260, height: 260, borderRadius: 8 }}
         />
       </div>
 
+      {/* Price + Supply */}
       <div className="card">
         <div className="row">
           <div>
             <div className="small">Price</div>
             <div style={{ fontWeight: 700 }}>
-              {info.price ? `${info.price} ETH` : "Unknown"}
+              {price ? `${price} ETH` : "Loading…"}
             </div>
           </div>
 
           <div className="right">
             <div className="small">Supply</div>
             <div>
-              {info.supply} / {info.maxSupply}
+              {supply} / {maxSupply}
             </div>
           </div>
         </div>
 
+        {/* Quantity + Mint */}
         <div style={{ marginTop: 12 }} className="row">
           <div>
             <input
-              className="inputQty"
               type="number"
               min="1"
               value={qty}
               onChange={(e) => setQty(e.target.value)}
+              className="inputQty"
             />
-            <span style={{ marginLeft: 10 }} className="small">
-              qty
-            </span>
+            <span className="small" style={{ marginLeft: 10 }}>qty</span>
           </div>
 
           <div>
-            <button className="btn" onClick={handleMint} disabled={loading}>
-              {loading ? "Processing…" : "Mint Now"}
+            <button className="btn" disabled={loading} onClick={handleMint}>
+              {loading ? "Minting…" : "Mint Now"}
             </button>
           </div>
         </div>
 
         <div style={{ marginTop: 12 }}>
-          <button className="btn secondary" onClick={loadReadData}>
+          <button className="btn secondary" onClick={loadData}>
             Refresh Info
           </button>
         </div>
@@ -211,8 +167,8 @@ export default function Home() {
 
       <div className="card small">
         <strong>Status:</strong> {status}
-        <div className="footer">Contract: {CONTRACT_ADDRESS}</div>
+        <div className="footer">{CONTRACT_ADDRESS}</div>
       </div>
     </div>
   );
-                }
+  }
