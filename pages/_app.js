@@ -15,7 +15,7 @@ export default function App({ Component, pageProps }) {
         </QueryClientProvider>
       </WagmiProvider>
 
-      <Web3Modal projectId={projectId} enableAnalytics={false} />
+      <Web3Modal config={config} projectId={projectId} />
     </>
   )
 }
