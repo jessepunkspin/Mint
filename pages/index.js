@@ -222,12 +222,12 @@ export default function Home() {
       </div>
 
       <div className="card center">
-        {info.image ? (
-          <img className="nft-img" src={info.image} alt="nft" />
-        ) : (
-          <div style={{width:260,height:260, borderRadius:8, background:"#121214"}} className="center">
-            <div className="small">No preview available</div>
-          </div>
+        <img
+  className="nft-img"
+  src="/jessepunk.png"
+  alt="NFT"
+  style={{ width: 260, height: 260, borderRadius: 8 }}
+/>
         )}
       </div>
 
