@@ -1,21 +1,12 @@
 import '../styles/globals.css'
-import { Web3Modal } from '@web3modal/wagmi/react'
-import { WagmiProvider } from 'wagmi'
-import { config, projectId } from '../web3modal'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-
-const queryClient = new QueryClient()
+import { Web3Modal } from '@web3modal/ethers/react'
+import { projectId } from '../web3modal'
 
 export default function App({ Component, pageProps }) {
   return (
     <>
-      <WagmiProvider config={config}>
-        <QueryClientProvider client={queryClient}>
-          <Component {...pageProps} />
-        </QueryClientProvider>
-      </WagmiProvider>
-
-      <Web3Modal config={config} projectId={projectId} />
+      <Component {...pageProps} />
+      <Web3Modal projectId={projectId} />
     </>
   )
 }
