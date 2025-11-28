@@ -1,0 +1,18 @@
+{
+  "name": "baseposting-minter",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000"
+  },
+  "dependencies": {
+    "next": "14.0.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "ethers": "^6.9.0",
+    "web3modal": "^2.6.0",
+    "@walletconnect/web3-provider": "^1.8.0"
+  }
+}
