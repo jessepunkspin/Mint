@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
-import { useAccount, useConnect, useWriteContract } from "wagmi";
+import {
+  useWeb3ModalAccount,
+  useWeb3ModalProvider
+} from "@web3modal/ethers/react";
 import { CONTRACT_ADDRESS } from "../web3modal";
 
 const ABI = [
@@ -12,9 +15,8 @@ const ABI = [
 const TOKEN_ID = 0;
 
 export default function Home() {
-  const { address, isConnected } = useAccount();
-  const { connect } = useConnect();
-  const { writeContractAsync } = useWriteContract();
+  const { address, isConnected } = useWeb3ModalAccount();
+  const { walletProvider } = useWeb3ModalProvider();
 
   const [price, setPrice] = useState(null);
   const [supply, setSupply] = useState(null);
@@ -31,8 +33,8 @@ export default function Home() {
 
   async function loadData() {
     try {
-      const provider = new ethers.JsonRpcProvider("https://mainnet.base.org");
-      const c = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+      const rpc = new ethers.JsonRpcProvider("https://mainnet.base.org");
+      const c = new ethers.Contract(CONTRACT_ADDRESS, ABI, rpc);
 
       const cond = await c.claimConditions(TOKEN_ID);
 
@@ -42,52 +44,56 @@ export default function Home() {
 
       const raw = await c.uri(TOKEN_ID);
       const uri = raw.replace("ipfs://", "https://ipfs.io/ipfs/");
-      const meta = await fetch(uri).then(r => r.json());
+      const meta = await fetch(uri).then((r) => r.json());
       setImage(meta.image.replace("ipfs://", "https://ipfs.io/ipfs/"));
     } catch (err) {
-      console.error(err);
+      console.error("Error loading data", err);
     }
   }
 
   async function handleMint() {
     if (!isConnected) {
-      setStatus("Connect wallet first");
+      setStatus("Connect your wallet first");
       return;
     }
+
     setLoading(true);
-    setStatus("Minting...");
+    setStatus("Minting…");
 
     try {
+      const provider = new ethers.BrowserProvider(walletProvider);
+      const signer = await provider.getSigner();
+
+      const c = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
       const total = ethers.parseEther(String(price)) * BigInt(qty);
 
-      const tx = await writeContractAsync({
-        address: CONTRACT_ADDRESS,
-        abi: ABI,
-        functionName: "claimTo",
-        args: [address, TOKEN_ID, qty],
+      const tx = await c.claimTo(address, TOKEN_ID, qty, {
         value: total
       });
 
       setStatus("Waiting for confirmation…");
       await tx.wait();
 
-      setStatus("Mint successful!");
+      setStatus("Mint successful! 🎉");
       loadData();
-    } catch (e) {
-      console.error(e);
-      setStatus("Mint failed");
+    } catch (err) {
+      console.error(err);
+      setStatus("Mint failed ❌");
     }
+
     setLoading(false);
   }
 
   return (
     <div className="container">
+      {/* HEADER */}
       <div className="card">
         <div className="row">
           <div>
             <div className="title">JessePunk Legends</div>
             <div className="small">Edition Drop</div>
           </div>
+
           <div className="right">
             {isConnected ? (
               <div className="small">
@@ -100,10 +106,12 @@ export default function Home() {
         </div>
       </div>
 
+      {/* NFT IMAGE */}
       <div className="card center">
         <img src={image} style={{ width: 260, height: 260, borderRadius: 8 }} />
       </div>
 
+      {/* PRICE + SUPPLY */}
       <div className="card">
         <div className="row">
           <div>
@@ -112,12 +120,16 @@ export default function Home() {
               {price ? `${price} ETH` : "Loading…"}
             </div>
           </div>
+
           <div className="right">
             <div className="small">Supply</div>
-            <div>{supply} / {maxSupply}</div>
+            <div>
+              {supply} / {maxSupply}
+            </div>
           </div>
         </div>
 
+        {/* QTY + MINT */}
         <div className="row" style={{ marginTop: 12 }}>
           <div>
             <input
@@ -142,6 +154,7 @@ export default function Home() {
         </div>
       </div>
 
+      {/* FOOTER */}
       <div className="card small">
         <strong>Status:</strong> {status}
         <div className="footer">{CONTRACT_ADDRESS}</div>
