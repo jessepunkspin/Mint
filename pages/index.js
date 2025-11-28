@@ -1,10 +1,6 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
-import {
-  useAccount,
-  useWriteContract,
-  useConnect,
-} from "wagmi";
+import { useAccount, useConnect, useWriteContract } from "wagmi";
 import { CONTRACT_ADDRESS } from "../web3modal";
 
 const ABI = [
@@ -38,19 +34,16 @@ export default function Home() {
       const provider = new ethers.JsonRpcProvider("https://mainnet.base.org");
       const c = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
 
-      // CLAIM CONDITIONS
       const cond = await c.claimConditions(TOKEN_ID);
 
       setPrice(ethers.formatEther(cond.pricePerToken));
       setSupply(cond.supplyClaimed.toString());
       setMaxSupply(cond.maxClaimableSupply.toString());
 
-      // METADATA
-      const rawUri = await c.uri(TOKEN_ID);
-      const uri = rawUri.replace("ipfs://", "https://ipfs.io/ipfs/");
+      const raw = await c.uri(TOKEN_ID);
+      const uri = raw.replace("ipfs://", "https://ipfs.io/ipfs/");
       const meta = await fetch(uri).then(r => r.json());
       setImage(meta.image.replace("ipfs://", "https://ipfs.io/ipfs/"));
-
     } catch (err) {
       console.error(err);
     }
@@ -61,9 +54,8 @@ export default function Home() {
       setStatus("Connect wallet first");
       return;
     }
-
     setLoading(true);
-    setStatus("Minting…");
+    setStatus("Minting...");
 
     try {
       const total = ethers.parseEther(String(price)) * BigInt(qty);
@@ -76,30 +68,26 @@ export default function Home() {
         value: total
       });
 
-      setStatus("Waiting confirmation…");
+      setStatus("Waiting for confirmation…");
       await tx.wait();
 
-      setStatus("Mint successful 🎉");
+      setStatus("Mint successful!");
       loadData();
-    } catch (err) {
-      console.log(err);
-      setStatus("Mint failed ❌");
+    } catch (e) {
+      console.error(e);
+      setStatus("Mint failed");
     }
-
     setLoading(false);
   }
 
   return (
     <div className="container">
-
-      {/* HEADER */}
       <div className="card">
         <div className="row">
           <div>
             <div className="title">JessePunk Legends</div>
             <div className="small">Edition Drop</div>
           </div>
-
           <div className="right">
             {isConnected ? (
               <div className="small">
@@ -112,15 +100,10 @@ export default function Home() {
         </div>
       </div>
 
-      {/* NFT IMAGE */}
       <div className="card center">
-        <img
-          src={image}
-          style={{ width: 260, height: 260, borderRadius: 8 }}
-        />
+        <img src={image} style={{ width: 260, height: 260, borderRadius: 8 }} />
       </div>
 
-      {/* PRICE + SUPPLY */}
       <div className="card">
         <div className="row">
           <div>
@@ -129,25 +112,22 @@ export default function Home() {
               {price ? `${price} ETH` : "Loading…"}
             </div>
           </div>
-
           <div className="right">
             <div className="small">Supply</div>
             <div>{supply} / {maxSupply}</div>
           </div>
         </div>
 
-        {/* MINT CONTROLS */}
         <div className="row" style={{ marginTop: 12 }}>
           <div>
             <input
+              className="inputQty"
               type="number"
               min="1"
               value={qty}
               onChange={(e) => setQty(e.target.value)}
-              className="inputQty"
             />
           </div>
-
           <div>
             <button className="btn" disabled={loading} onClick={handleMint}>
               {loading ? "Minting…" : "Mint Now"}
@@ -166,7 +146,6 @@ export default function Home() {
         <strong>Status:</strong> {status}
         <div className="footer">{CONTRACT_ADDRESS}</div>
       </div>
-
     </div>
   );
-        }
+                }
