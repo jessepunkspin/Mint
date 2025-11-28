@@ -1,120 +1,134 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
-import Web3Modal from "web3modal";
-import WalletConnectProvider from "@walletconnect/web3-provider";
-
-const CONTRACT_ADDRESS = "0x6a0DbB7e447B8f681afbe5ec8b1573e6FaFf7ba2";
-const TOKEN_ID = 0;
+import {
+  useWeb3ModalAccount,
+  useWeb3ModalProvider
+} from "@web3modal/ethers/react";
+import { CONTRACT_ADDRESS } from "../web3modal";
 
 const ABI = [
-  "function uri(uint256) view returns (string)",
-  "function balanceOf(address,uint256) view returns (uint256)",
-
-  // Edition Drop claim condition
-  "function claimConditions(uint256) view returns (tuple(uint256 startTimestamp,uint256 maxClaimableSupply,uint256 supplyClaimed,uint256 quantityLimitPerWallet,uint256 pricePerToken,address currency,uint256 merkleRoot))",
-
-  // Mint function
-  "function claimTo(address,uint256,uint256) payable"
+  "function name() view returns (string)",
+  "function symbol() view returns (string)",
+  "function totalSupply() view returns (uint256)",
+  "function maxSupply() view returns (uint256)",
+  "function price() view returns (uint256)",
+  "function cost() view returns (uint256)",
+  "function publicSalePrice() view returns (uint256)",
+  "function claim(uint256) payable",
+  "function mint(uint256) payable",
+  "function mintTo(address,uint256) payable",
+  "function safeMint(address,uint256) payable"
 ];
 
 export default function Home() {
-  const [provider, setProvider] = useState(null);
-  const [signer, setSigner] = useState(null);
-  const [address, setAddress] = useState("");
+  const { address, isConnected } = useWeb3ModalAccount();
+  const { walletProvider } = useWeb3ModalProvider();
+
   const [contract, setContract] = useState(null);
-
-  const [price, setPrice] = useState(null);
-  const [supplyClaimed, setSupplyClaimed] = useState(null);
-  const [maxSupply, setMaxSupply] = useState(null);
-  const [image, setImage] = useState("/jessepunk.png");
-
+  const [info, setInfo] = useState({
+    name: "NFT",
+    symbol: "",
+    supply: null,
+    maxSupply: null,
+    price: null
+  });
   const [qty, setQty] = useState(1);
   const [status, setStatus] = useState("Ready");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetchInfo();
+    loadReadData();
   }, []);
 
-  async function fetchInfo() {
+  async function loadReadData() {
     try {
       const rpc = new ethers.JsonRpcProvider("https://mainnet.base.org");
-      const readContract = new ethers.Contract(CONTRACT_ADDRESS, ABI, rpc);
+      const c = new ethers.Contract(CONTRACT_ADDRESS, ABI, rpc);
 
-      // Fetch claim condition
-      const cond = await readContract.claimConditions(TOKEN_ID);
+      let name = await safe(c.name);
+      let symbol = await safe(c.symbol);
+      let supply = await safeNum(c.totalSupply);
+      let maxSupply = await safeNum(c.maxSupply);
 
-      setPrice(ethers.formatEther(cond.pricePerToken));
-      setSupplyClaimed(cond.supplyClaimed.toString());
-      setMaxSupply(cond.maxClaimableSupply.toString());
+      let price = await safeNum(c.price);
+      if (!price) price = await safeNum(c.cost);
+      if (!price) price = await safeNum(c.publicSalePrice);
+      if (price) price = ethers.formatEther(price);
 
-      // Fetch metadata (image)
-      const uri = await readContract.uri(TOKEN_ID);
-      let url = uri.replace("ipfs://", "https://ipfs.io/ipfs/");
-      const meta = await fetch(url).then(r => r.json());
-      let img = meta.image.replace("ipfs://", "https://ipfs.io/ipfs/");
-      setImage(img);
-
-    } catch (err) {
-      console.log("Error loading info:", err);
+      setInfo({
+        name: name || "JessePunk Legends",
+        symbol: symbol || "",
+        supply: supply ?? "—",
+        maxSupply: maxSupply ?? "—",
+        price: price || null
+      });
+    } catch (e) {
+      console.log("Read error", e);
     }
   }
 
-  async function connectWallet() {
+  async function safe(fn) {
     try {
-      const providerOptions = {
-        walletconnect: {
-          package: WalletConnectProvider,
-          options: { infuraId: "" }
-        }
-      };
-      const web3Modal = new Web3Modal({ cacheProvider: true, providerOptions });
-      const instance = await web3Modal.connect();
-
-      const p = new ethers.BrowserProvider(instance);
-      const s = await p.getSigner();
-      const addr = await s.getAddress();
-
-      setProvider(p);
-      setSigner(s);
-      setAddress(addr);
-
-      const c = new ethers.Contract(CONTRACT_ADDRESS, ABI, s);
-      setContract(c);
-
-      setStatus("Wallet connected");
-    } catch (err) {
-      setStatus("Connection failed");
+      return await fn();
+    } catch {
+      return null;
     }
   }
 
-  async function mint() {
-    if (!contract) {
-      setStatus("Connect wallet first.");
+  async function safeNum(fn) {
+    try {
+      return (await fn()).toString();
+    } catch {
+      return null;
+    }
+  }
+
+  async function setupContract() {
+    const provider = new ethers.BrowserProvider(walletProvider);
+    const signer = await provider.getSigner();
+    return new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+  }
+
+  async function handleMint() {
+    if (!isConnected) {
+      setStatus("Connect your wallet first.");
       return;
     }
 
+    setLoading(true);
+    setStatus("Preparing transaction…");
+
     try {
-      setLoading(true);
-      setStatus("Sending transaction...");
+      const c = await setupContract();
+      setContract(c);
 
-      const total = ethers.parseEther((price * qty).toString());
+      const q = Number(qty || 1);
 
-      const tx = await contract.claimTo(
-        address,
-        TOKEN_ID,
-        qty,
-        { value: total }
-      );
+      let price = info.price ? ethers.parseEther(info.price) : 0n;
+      let total = price * BigInt(q);
 
-      setStatus("Waiting for confirmation...");
-      await tx.wait();
+      const methods = [
+        ["claim", [q]],
+        ["mint", [q]],
+        ["mintTo", [address, q]],
+        ["safeMint", [address, q]]
+      ];
 
-      setStatus("Mint successful!");
-      fetchInfo();
-    } catch (err) {
-      console.log(err);
-      setStatus("Mint failed");
+      for (const [fn, args] of methods) {
+        try {
+          const tx = await c[fn](...args, { value: total });
+          setStatus("Waiting for confirmation…");
+          await tx.wait();
+          setStatus("Mint successful ✅");
+          loadReadData();
+          setLoading(false);
+          return;
+        } catch (err) {}
+      }
+
+      setStatus("Mint method not found. Need full ABI.");
+    } catch (e) {
+      setStatus("Transaction failed.");
     }
 
     setLoading(false);
@@ -122,28 +136,31 @@ export default function Home() {
 
   return (
     <div className="container">
-
       <div className="card">
         <div className="row">
           <div>
-            <div className="title">JessePunk Legends</div>
-            <div className="small">Edition Drop</div>
+            <div className="title">{info.name}</div>
+            <div className="small">{info.symbol}</div>
           </div>
 
           <div className="right">
-            {address ? (
-              <div className="small">{address.slice(0,6)}...{address.slice(-4)}</div>
+            {isConnected ? (
+              <div className="small">
+                {address.slice(0, 6)}...{address.slice(-4)}
+              </div>
             ) : (
-              <button className="btn" onClick={connectWallet}>Connect Wallet</button>
+              <w3m-button />
             )}
           </div>
         </div>
       </div>
 
       <div className="card center">
-        <img className="nft-img"
-          src={image}
-          style={{ width:260, height:260, borderRadius:8 }}
+        <img
+          className="nft-img"
+          src="/jessepunk.png"
+          alt="NFT"
+          style={{ width: 260, height: 260, borderRadius: 8 }}
         />
       </div>
 
@@ -151,37 +168,44 @@ export default function Home() {
         <div className="row">
           <div>
             <div className="small">Price</div>
-            <div style={{fontWeight:700}}>
-              {price ? `${price} ETH` : "Unknown"}
+            <div style={{ fontWeight: 700 }}>
+              {info.price ? `${info.price} ETH` : "Unknown"}
             </div>
           </div>
 
           <div className="right">
             <div className="small">Supply</div>
-            <div>{supplyClaimed ?? "-"} / {maxSupply ?? "-"}</div>
+            <div>
+              {info.supply} / {info.maxSupply}
+            </div>
           </div>
         </div>
 
-        <div style={{marginTop:12}} className="row">
+        <div style={{ marginTop: 12 }} className="row">
           <div>
-            <input className="inputQty"
+            <input
+              className="inputQty"
               type="number"
               min="1"
               value={qty}
-              onChange={(e)=>setQty(e.target.value)}
+              onChange={(e) => setQty(e.target.value)}
             />
-            <span style={{marginLeft:10}} className="small">qty</span>
+            <span style={{ marginLeft: 10 }} className="small">
+              qty
+            </span>
           </div>
 
           <div>
-            <button className="btn" onClick={mint} disabled={loading}>
-              {loading ? "Processing..." : "Mint Now"}
+            <button className="btn" onClick={handleMint} disabled={loading}>
+              {loading ? "Processing…" : "Mint Now"}
             </button>
           </div>
         </div>
 
-        <div style={{marginTop:12}}>
-          <button className="btn secondary" onClick={fetchInfo}>Refresh Info</button>
+        <div style={{ marginTop: 12 }}>
+          <button className="btn secondary" onClick={loadReadData}>
+            Refresh Info
+          </button>
         </div>
       </div>
 
@@ -189,7 +213,6 @@ export default function Home() {
         <strong>Status:</strong> {status}
         <div className="footer">Contract: {CONTRACT_ADDRESS}</div>
       </div>
-
     </div>
   );
-    }
+                }
